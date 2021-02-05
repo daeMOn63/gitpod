@@ -49,7 +49,12 @@ func NewManager(exposed ExposedPortsInterface, served ServedPortsObserver, confi
 
 		state:         state,
 		subscriptions: make(map[*Subscription]struct{}),
-		proxyStarter:  startLocalhostProxy}
+		proxyStarter:  startLocalhostProxy,
+
+		minAutoExposeDelay:        2 * time.Second,
+		maxAutoExposeDelay:        30 * time.Second,
+		autoExposeDelayGrowFactor: 1.5,
+	}
 }
 
 type localhostProxy struct {
@@ -78,6 +83,10 @@ type Manager struct {
 
 	subscriptions map[*Subscription]struct{}
 	closed        bool
+
+	minAutoExposeDelay        time.Duration
+	maxAutoExposeDelay        time.Duration
+	autoExposeDelayGrowFactor float64
 }
 
 type managedPort struct {
@@ -175,7 +184,7 @@ func (pm *Manager) Run(ctx context.Context, wg *sync.WaitGroup) {
 			// we received just an error, but no update
 			continue
 		}
-		pm.updateState(exposed, served, configured)
+		pm.updateState(ctx, exposed, served, configured)
 	}
 }
 
@@ -187,7 +196,7 @@ func (pm *Manager) Status() []*api.PortsStatus {
 	return pm.getStatus()
 }
 
-func (pm *Manager) updateState(exposed []ExposedPort, served []ServedPort, configured *Configs) {
+func (pm *Manager) updateState(ctx context.Context, exposed []ExposedPort, served []ServedPort, configured *Configs) {
 	pm.mu.Lock()
 	defer pm.mu.Unlock()
 
@@ -221,7 +230,7 @@ func (pm *Manager) updateState(exposed []ExposedPort, served []ServedPort, confi
 		pm.configs = configured
 	}
 
-	newState := pm.nextState()
+	newState := pm.nextState(ctx)
 	stateChanged := !reflect.DeepEqual(newState, pm.state)
 	pm.state = newState
 
@@ -241,10 +250,7 @@ func (pm *Manager) updateState(exposed []ExposedPort, served []ServedPort, confi
 	}
 }
 
-func (pm *Manager) nextState() map[uint32]*managedPort {
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
+func (pm *Manager) nextState(ctx context.Context) map[uint32]*managedPort {
 	state := make(map[uint32]*managedPort)
 
 	// 1. first capture exposed since they don't depend on configured or served ports
@@ -356,13 +362,35 @@ func (pm *Manager) nextState() map[uint32]*managedPort {
 }
 
 func (pm *Manager) autoExpose(ctx context.Context, mp *managedPort, public bool) {
-	err := pm.E.Expose(ctx, mp.LocalhostPort, mp.GlobalPort, public)
+	err := pm.autoExposeWithBackoff(ctx, mp, public)
 	if err != nil {
-		log.WithError(err).WithField("port", *mp).Warn("cannot auto-expose port")
+		if err != context.Canceled {
+			log.WithError(err).WithField("port", *mp).Warn("cannot auto-expose port")
+		}
 		return
 	}
 	pm.autoExposed[mp.LocalhostPort] = mp.GlobalPort
 	log.WithField("port", *mp).Info("auto-expose port")
+}
+
+func (pm *Manager) autoExposeWithBackoff(ctx context.Context, mp *managedPort, public bool) error {
+	delay := pm.minAutoExposeDelay
+	for {
+		err := pm.E.Expose(ctx, mp.LocalhostPort, mp.GlobalPort, public)
+		if err != context.DeadlineExceeded {
+			return err
+		}
+		log.WithError(err).WithField("port", *mp).Warnf("cannot auto-expose port, trying again in %d seconds...", uint32(delay.Seconds()))
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-time.After(delay):
+			delay = time.Duration(float64(delay) * pm.autoExposeDelayGrowFactor)
+			if delay > pm.maxAutoExposeDelay {
+				delay = pm.maxAutoExposeDelay
+			}
+		}
+	}
 }
 
 func (pm *Manager) updateProxies() {
