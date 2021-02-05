@@ -110,6 +110,12 @@ components:
      # TODO: [geropl] Why is this not part of values.yaml?
     additionalConfig:
       theiaSupervisorToken: "354c0b368f2b4a93b7b812564e663d23"
+    rpc:
+        ratelimit:
+          - method: "/wsman.WorkspaceManager/ControlPort"
+            block: true
+            bucketSize: 1
+            refillInterval: "60s"
 
   # Use Hosts SSD for perf and to not spam the boot disk
   nodeDaemon:
