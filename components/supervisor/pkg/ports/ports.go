@@ -377,8 +377,12 @@ func (pm *Manager) autoExposeWithBackoff(ctx context.Context, mp *managedPort, p
 	delay := pm.minAutoExposeDelay
 	for {
 		err := pm.E.Expose(ctx, mp.LocalhostPort, mp.GlobalPort, public)
-		if err != context.DeadlineExceeded {
-			return err
+		if err == nil {
+			return nil
+		}
+		ctxErr := ctx.Err()
+		if ctxErr != nil {
+			return ctxErr
 		}
 		log.WithError(err).WithField("port", *mp).Warnf("cannot auto-expose port, trying again in %d seconds...", uint32(delay.Seconds()))
 		select {
