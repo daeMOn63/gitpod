@@ -18,7 +18,7 @@ export class ExampleRepositories1612448906950 implements MigrationInterface {
             { url: 'https://github.com/breatheco-de/python-flask-api-tutorial', description: '**Python** – An interactive tutorial about Python Flask', priority: 70 },
             { url: 'https://github.com/prometheus/prometheus', description: '**Go** – A monitoring system and time series database', priority: 60 },
             { url: 'https://github.com/nushell/nushell', description: '**Rust** – A terminal emulator written in Rust', priority: 50 },
-            { url: 'https://github.com/gitpod-io/spring-petclinic', description: '**Java** – A Java Spring sample web application', priority: 40 },
+            { url: 'https://github.com/gitpod-io/spring-petclinic', description: '**Java** – A Spring sample web application', priority: 40 },
             { url: 'https://github.com/gitpod-io/ruby-on-rails', description: '**Ruby** – A Rails example with PostgreSQL database', priority: 30 },
             { url: 'https://github.com/gitpod-io/dotnetcore', description: '**C#** – A simple .NET Core application example', priority: 20 },
             { url: 'https://github.com/symfony/demo', description: '**PHP** – A Symfony demo application', priority: 10 },
